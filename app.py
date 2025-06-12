@@ -5,13 +5,16 @@ import pandas as pd
 import plotly.express as px
 import dash_bootstrap_components as dbc
 from dash import dash_table
+import os # J'ajoute l'importation du module os
 
 # Chargez votre fichier CSV
-# Assurez-vous que 'votre_fichier.csv' est le nom correct et que le fichier est dans le même répertoire
+# Assurez-vous que 'Medicaldataset.csv' est le nom correct et que le fichier est dans le même répertoire
 try:
-    df = pd.read_csv(r'C:\Users\gallemand\Desktop\Projet Plotly Dash\Medicaldataset.csv')
+    # Chemin relatif au répertoire du script
+    csv_file_path = os.path.join(os.path.dirname(__file__), 'Medicaldataset.csv')
+    df = pd.read_csv(csv_file_path)
 except FileNotFoundError:
-    print("Erreur : Le fichier 'votre_fichier.csv' n'a pas été trouvé. Veuillez vérifier le nom et le chemin du fichier.")
+    print("Erreur : Le fichier 'Medicaldataset.csv' n'a pas été trouvé. Veuillez vérifier le nom et le chemin du fichier.")
     exit()
 
 # Initialiser l'application Dash avec des thèmes Bootstrap
@@ -26,25 +29,31 @@ app.layout = dbc.Container(fluid=True, children=[
         dbc.Col(md=3, children=[
             dbc.Card(
                 dbc.CardBody([
-                    html.H4("Contrôles des Données", className="card-title text-primary"),
+                    html.H4("Choix des Données", className="card-title text-primary"),
                     html.Hr(className="my-3"),
-                    html.Label("Sélectionnez une colonne pour l'axe X :", className="form-label mt-3"),
+                    html.Label("Sélectionnez une colonne pour l'axe X:", className="form-label mt-3"),
                     dcc.Dropdown(
                         id='x-column-dropdown',
                         options=[{'label': col, 'value': col} for col in df.columns],
                         value=df.columns[0] if not df.columns.empty else None,
-                        className="mb-3 dbc"
+                        className="mb-3 dbc",
+                        searchable=False,
+                        clearable=False,
+                        multi=False
                     ),
 
-                    html.Label("Sélectionnez une colonne pour l'axe Y (si applicable) :", className="form-label"),
+                    html.Label("Sélectionnez une colonne pour l'axe Y:", className="form-label"),
                     dcc.Dropdown(
                         id='y-column-dropdown',
                         options=[{'label': col, 'value': col} for col in df.columns],
                         value=df.columns[1] if len(df.columns) > 1 else (df.columns[0] if not df.columns.empty else None),
-                        className="mb-3 dbc"
+                        className="mb-3 dbc",
+                        searchable=False,
+                        clearable=False,
+                        multi=False
                     ),
 
-                    html.Label("Sélectionnez le type de graphique :", className="form-label"),
+                    html.Label("Sélectionnez le type de graphique:", className="form-label"),
                     dcc.Dropdown(
                         id='graph-type-dropdown',
                         options=[
@@ -53,7 +62,10 @@ app.layout = dbc.Container(fluid=True, children=[
                             {'label': 'Graphique en Barres', 'value': 'bar'}
                         ],
                         value='histogram',
-                        className="mb-3 dbc"
+                        className="mb-3 dbc",
+                        searchable=False,
+                        clearable=False,
+                        multi=False
                     ),
 
                     html.Label("Filtrer par Résultat :", className="form-label"),
@@ -79,9 +91,11 @@ app.layout = dbc.Container(fluid=True, children=[
                         dcc.Graph(
                             id='main-graph',
                             figure={},
-                            className="dbc"
+                            className="dbc",
+                            style={'height': '500px'}
                         )
-                    ])
+                    ]),
+                    html.Div(id='graph-error-output', className="text-danger text-center mt-3")
                 ]),
                 className="mb-4 h-100 shadow-sm"
             )
@@ -123,7 +137,8 @@ app.layout = dbc.Container(fluid=True, children=[
 @app.callback(
     [
         dash.dependencies.Output('main-graph', 'figure'),
-        dash.dependencies.Output('data-table', 'data') # Nouvelle sortie pour le tableau
+        dash.dependencies.Output('data-table', 'data'),
+        dash.dependencies.Output('graph-error-output', 'children') # Nouvelle sortie pour les messages d'erreur
     ],
     [
         dash.dependencies.Input('x-column-dropdown', 'value'),
@@ -133,8 +148,15 @@ app.layout = dbc.Container(fluid=True, children=[
     ]
 )
 def update_graph_and_table(selected_column_x, selected_column_y, selected_graph_type, selected_result_filter):
+    print(f"Callback déclenché avec :")
+    print(f"  X-Column: {selected_column_x}")
+    print(f"  Y-Column: {selected_column_y}")
+    print(f"  Graph Type: {selected_graph_type}")
+    print(f"  Result Filter: {selected_result_filter}")
+
     # Filtrer le DataFrame en fonction du filtre de résultat
     filtered_df = df.copy()
+    graph_error_message = "" # Initialise le message d'erreur
     if selected_result_filter != 'all':
         filtered_df = filtered_df[filtered_df['Result'] == selected_result_filter]
 
@@ -142,22 +164,30 @@ def update_graph_and_table(selected_column_x, selected_column_y, selected_graph_
     fig = {} # Initialise une figure vide
 
     if selected_column_x is None or selected_graph_type is None:
-        return {}, filtered_df.to_dict('records')
+        print("Retourne une figure vide car X-Column ou Graph Type est None.")
+        graph_error_message = "Veuillez sélectionner une colonne pour l'axe X et un type de graphique."
+        return {}, filtered_df.to_dict('records'), graph_error_message
 
     if selected_graph_type == 'histogram':
         fig = px.histogram(filtered_df, x=selected_column_x, title=f'Histogramme de {selected_column_x}')
     elif selected_graph_type == 'scatter':
-        if selected_column_y is None: 
-            return {}, filtered_df.to_dict('records')
+        if selected_column_y is None:
+            print("Retourne une figure vide car Y-Column est None pour Scatter.")
+            graph_error_message = "Veuillez sélectionner une colonne pour l'axe Y pour le Nuage de Points."
+            return {}, filtered_df.to_dict('records'), graph_error_message
         fig = px.scatter(filtered_df, x=selected_column_x, y=selected_column_y,
                          title=f'Nuage de Points: {selected_column_x} vs {selected_column_y}')
     elif selected_graph_type == 'bar':
-        if selected_column_y is None: 
-            return {}, filtered_df.to_dict('records')
+        if selected_column_y is None:
+            print("Retourne une figure vide car Y-Column est None pour Bar.")
+            graph_error_message = "Veuillez sélectionner une colonne pour l'axe Y pour le Graphique en Barres."
+            return {}, filtered_df.to_dict('records'), graph_error_message
         fig = px.bar(filtered_df, x=selected_column_x, y=selected_column_y,
                      title=f'Graphique en Barres: {selected_column_x} vs {selected_column_y}')
-    
-    return fig, filtered_df.to_dict('records') # Retourne la figure et les données filtrées pour le tableau
+
+    print(f"Figure générée (non vide) : {bool(fig)}")
+    print(f"Nombre de lignes filtrées pour le tableau : {len(filtered_df)}")
+    return fig, filtered_df.to_dict('records'), graph_error_message # Retourne la figure, les données filtrées et le message d'erreur
 
 # Exécuter l'application
 if __name__ == '__main__':
